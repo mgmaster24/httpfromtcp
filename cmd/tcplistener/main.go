@@ -1,11 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"net"
-	"strings"
+
+	"github.com/mgmaster24/httpfromtcp/internal/request"
 )
 
 func main() {
@@ -22,45 +21,15 @@ func main() {
 		}
 
 		fmt.Println("Connection established")
-		linesChannel := getLinesChannel(connection)
-
-		for line := range linesChannel {
-			fmt.Println(line)
+		request, err := request.RequestFromReader(connection)
+		if err != nil {
+			panic(err)
 		}
 
+		fmt.Println("Request line:")
+		fmt.Printf("- Method: %s\n", request.RequestLine.Method)
+		fmt.Printf("- Target: %s\n", request.RequestLine.RequestTarget)
+		fmt.Printf("- Version: %s\n", request.RequestLine.HttpVersion)
 		fmt.Println("Connection/Channel Closed")
 	}
-}
-
-func getLinesChannel(connection net.Conn) <-chan string {
-	lineChannel := make(chan string)
-	go func() {
-		currentLine := ""
-		for {
-			bytes := make([]byte, 8)
-			n, err := connection.Read(bytes)
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
-					if currentLine != "" {
-						lineChannel <- currentLine
-					}
-
-					close(lineChannel)
-					return
-				}
-
-				panic(err)
-			}
-
-			currentLine += string(bytes[:n])
-			parts := strings.Split(currentLine, "\n")
-			for i := 0; i < len(parts)-1; i++ {
-				lineChannel <- parts[i]
-			}
-
-			currentLine = parts[len(parts)-1]
-		}
-	}()
-
-	return lineChannel
 }
