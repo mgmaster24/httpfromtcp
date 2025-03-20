@@ -1,8 +1,10 @@
 package headers
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 type Headers map[string]string
@@ -14,26 +16,55 @@ func NewHeaders() Headers {
 	return headers
 }
 
-func (h Headers) Parse(data []byte) (n int, done bool, err error) {
-	headers := string(data)
-	if !strings.Contains(headers, crlf) {
+func (h Headers) Parse(data []byte) (int, bool, error) {
+	crlfIdx := bytes.Index(data, []byte(crlf))
+	if crlfIdx == -1 {
 		return 0, false, nil
 	}
 
-	headers = headers[:strings.Index(headers, crlf)-1]
-	if len(headers) == 0 {
-		return 0, true, nil
+	if crlfIdx == 0 {
+		return len(crlf), true, nil
 	}
 
-	index := strings.Index(headers, ":")
-	if headers[index-1] == ' ' {
-		return 0, false, fmt.Errorf("field line is in incorrect format: %s", headers)
+	parts := bytes.SplitN(data[:crlfIdx], []byte(":"), 2)
+	fieldName := strings.ToLower(string(parts[0]))
+	if fieldName != strings.TrimRight(fieldName, " ") {
+		return 0, false, fmt.Errorf("invalid header name: %s", fieldName)
 	}
 
-	fieldName := headers[:index]
 	fieldName = strings.TrimSpace(fieldName)
-	fieldValue := headers[index+1:]
-	fieldValue = strings.TrimSpace(fieldValue)
-	h[fieldName] = fieldValue
-	return len(data) - 2, false, nil
+	if !isValidString(fieldName) {
+		return 0, false, fmt.Errorf("invalid header token found: %s", fieldName)
+	}
+
+	fieldValue := bytes.TrimSpace(parts[1])
+	h.Set(fieldName, string(fieldValue))
+	return crlfIdx + len(crlf), false, nil
+}
+
+func (h Headers) Set(key string, value string) {
+	if val, ok := h[key]; ok {
+		value = strings.Join([]string{val, value}, ", ")
+	}
+
+	h[key] = value
+}
+
+func isValidString(s string) bool {
+	specialChars := "!#$%&'*+-./^_`|~"
+	for _, char := range s {
+		if !(unicode.IsLetter(char) || unicode.IsDigit(char) || contains(specialChars, char)) {
+			return false
+		}
+	}
+	return true
+}
+
+func contains(chars string, char rune) bool {
+	for _, c := range chars {
+		if c == char {
+			return true
+		}
+	}
+	return false
 }
