@@ -43,11 +43,21 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 }
 
 func (h Headers) Set(key string, value string) {
+	key = strings.ToLower(key)
 	if val, ok := h[key]; ok {
 		value = strings.Join([]string{val, value}, ", ")
 	}
 
 	h[key] = value
+}
+
+func (h Headers) Get(key string) (string, bool) {
+	key = strings.ToLower(key)
+	if val, ok := h[key]; ok {
+		return val, ok
+	}
+
+	return "", false
 }
 
 func isValidString(s string) bool {
