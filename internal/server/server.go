@@ -1,20 +1,43 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync/atomic"
 
+	"github.com/mgmaster24/httpfromtcp/internal/request"
 	"github.com/mgmaster24/httpfromtcp/internal/response"
 )
 
 type Server struct {
 	listener net.Listener
+	handler  Handler
 	closed   atomic.Bool
 }
 
-func Serve(port int32) (*Server, error) {
+type HandlerError struct {
+	StatusCode response.StatusCode
+	Msg        string
+}
+
+func WriteResponse(w io.Writer, statusCode response.StatusCode, contentLen int) {
+	err := response.WriteStatusLine(w, statusCode)
+	if err != nil {
+		log.Print("Error writing the status line")
+	}
+
+	err = response.WriteHeaders(w, response.GetDefaultHeaders(contentLen))
+	if err != nil {
+		log.Print("Error writing headers")
+	}
+}
+
+type Handler func(w io.Writer, req *request.Request)
+
+func Serve(port int32, handler Handler) (*Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err
@@ -22,6 +45,7 @@ func Serve(port int32) (*Server, error) {
 
 	server := &Server{
 		listener: listener,
+		handler:  handler,
 	}
 
 	go server.listen()
@@ -54,12 +78,17 @@ func (s *Server) listen() {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	err := response.WriteStatusLine(conn, response.Ok)
+	request, err := request.RequestFromReader(conn)
 	if err != nil {
-		log.Print("Error writing the status line")
+		WriteResponse(conn, response.InternalServerError, 0)
+		return
 	}
-	err = response.WriteHeaders(conn, response.GetDefaultHeaders(0))
+
+	var buf bytes.Buffer
+	s.handler(&buf, request)
+
+	_, err = buf.WriteTo(conn)
 	if err != nil {
-		log.Print("Error writing headers")
+		log.Printf("error writing the content to the connection. err: %e", err)
 	}
 }
