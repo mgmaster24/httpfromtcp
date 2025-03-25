@@ -43,7 +43,7 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	}
 
 	defer func() { w.state = Body }()
-	return writeHeaders(w.Writer, headers)
+	return WriteHeaders(w.Writer, headers)
 }
 
 func (w *Writer) WriteBody(p []byte) (int, error) {
@@ -56,14 +56,39 @@ func (w *Writer) WriteBody(p []byte) (int, error) {
 }
 
 func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
-	return 0, nil
+	var buf []byte
+	buf = fmt.Appendf(buf, "%x\r\n", len(p))
+	chunkStartLen, err := w.Writer.Write(buf)
+	if err != nil {
+		return 0, err
+	}
+	chunkBodyLen, err := w.Writer.Write(p)
+	if err != nil {
+		return 0, err
+	}
+
+	chunkEndLen, err := w.Writer.Write([]byte("\r\n"))
+	if err != nil {
+		return 0, err
+	}
+	return chunkStartLen + chunkBodyLen + chunkEndLen, nil
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	return 0, nil
+	var buf []byte
+	buf = fmt.Appendf(buf, "%x\r\n", 0)
+	chunkStartLen, err := w.Writer.Write(buf)
+	if err != nil {
+		return 0, err
+	}
+	chunkBodyLen, err := w.Writer.Write([]byte("\r\n"))
+	if err != nil {
+		return 0, err
+	}
+	return chunkStartLen + chunkBodyLen, nil
 }
 
-func writeHeaders(w io.Writer, headers headers.Headers) error {
+func WriteHeaders(w io.Writer, headers headers.Headers) error {
 	for k, v := range headers {
 		_, err := fmt.Fprintf(w, "%s: %s\r\n", k, v)
 		if err != nil {

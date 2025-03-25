@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/mgmaster24/httpfromtcp/internal/headers"
@@ -64,6 +67,43 @@ func handler(w io.Writer, req *request.Request) {
 	writer := response.NewWriter(w)
 	hdrs := headers.NewHeaders()
 	hdrs.Set("Content-Type", "text/html")
+
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin") {
+		target := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin")
+		url := fmt.Sprintf("https://httpbin.org%s", target)
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("Error getting data from %s", url)
+			handle(writer, &hdrs, response.InternalServerError, HTML500)
+			return
+		}
+		defer resp.Body.Close()
+		writer.WriteStatusLine(response.StatusCode(resp.StatusCode))
+		hdrs.Set("Transfer-Encoding", "chunked")
+		for k, v := range resp.Header {
+			if k != "Content-Length" {
+				hdrs.Set(k, v[0])
+			}
+		}
+
+		writer.WriteHeaders(hdrs)
+		buf := make([]byte, 1024)
+		for {
+			n, err := resp.Body.Read(buf)
+			if err != nil {
+				if errors.Is(io.EOF, err) {
+					n, err = writer.WriteChunkedBodyDone()
+					return
+				}
+				log.Printf("Error reading from response. err: %e", err)
+				break
+			}
+
+			log.Printf("Bytes read. %d", n)
+			writer.WriteChunkedBody(buf[:n])
+		}
+		return
+	}
 
 	if req.RequestLine.RequestTarget == "/yourproblem" {
 		handle(writer, &hdrs, response.BadRequest, HTML400)
