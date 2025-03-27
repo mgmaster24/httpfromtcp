@@ -99,3 +99,13 @@ func WriteHeaders(w io.Writer, headers headers.Headers) error {
 	_, err := w.Write([]byte("\r\n"))
 	return err
 }
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	// First, write the final chunk of size 0
+	_, err := w.Writer.Write([]byte("0\r\n"))
+	if err != nil {
+		return err
+	}
+
+	return WriteHeaders(w.Writer, h)
+}

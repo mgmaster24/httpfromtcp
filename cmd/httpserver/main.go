@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -87,20 +88,31 @@ func handler(w io.Writer, req *request.Request) {
 		}
 
 		writer.WriteHeaders(hdrs)
+		respBody := ""
 		buf := make([]byte, 1024)
 		for {
 			n, err := resp.Body.Read(buf)
 			if err != nil {
 				if errors.Is(io.EOF, err) {
-					n, err = writer.WriteChunkedBodyDone()
-					return
+					// n, err = writer.WriteChunkedBodyDone()
+					break
 				}
 				log.Printf("Error reading from response. err: %e", err)
-				break
+				return
 			}
 
 			log.Printf("Bytes read. %d", n)
 			writer.WriteChunkedBody(buf[:n])
+			respBody = respBody + string(buf[:n])
+		}
+
+		log.Println("Writing Trailers")
+		trailers := headers.NewHeaders()
+		trailers.Set("X-Content-SHA256", fmt.Sprintf("%x", sha256.Sum256([]byte(respBody))))
+		trailers.Set("X-Content-Length", fmt.Sprintf("%d", len(respBody)))
+		err = writer.WriteTrailers(trailers)
+		if err != nil {
+			log.Printf("error writing headers, err: %e", err)
 		}
 		return
 	}
